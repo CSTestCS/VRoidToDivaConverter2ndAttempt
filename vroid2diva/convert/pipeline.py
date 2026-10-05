@@ -98,5 +98,11 @@ def convert(req: ConvertRequest, log: Callable[[str], None] = print, progress: C
 
     out = req.output_dir or os.path.join(req.game_dir, "mods", safe_folder_name("VRoid - " + display))
     write_mod(out, result, plan, chritm, body_item, "VRoid: " + display, req.author, log)
+    try:
+        from ..preview import game_bone_worlds, render
+        render(result.obj, game_bone_worlds(result.obj, ref, result.chains), os.path.join(out, "preview.png"),
+               title="%s (bound to %s's skeleton)" % (display, module.chara.title()))
+    except Exception as e:  # a preview must never break the conversion
+        log("Preview image skipped (%s)." % e)
     progress(1.0)
     return out

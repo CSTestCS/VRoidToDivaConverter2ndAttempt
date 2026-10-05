@@ -43,21 +43,27 @@ class BuildResult:
 
 def _top4(idx: np.ndarray, w: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Merge duplicate bones per vertex, keep the 4 strongest, renormalise."""
-    n, k = idx.shape
-    out_i = np.full((n, 4), -1, dtype=np.int64)
-    out_w = np.zeros((n, 4))
-    for v in range(n):
-        acc: Dict[int, float] = {}
-        for j in range(k):
-            b = idx[v, j]
-            if b >= 0 and w[v, j] > 0:
-                acc[b] = acc.get(b, 0.0) + w[v, j]
-        items = sorted(acc.items(), key=lambda kv: -kv[1])[:4]
-        total = sum(x for _, x in items)
-        for j, (b, x) in enumerate(items):
-            out_i[v, j] = b
-            out_w[v, j] = x / total if total > 0 else 0
-    return out_i, out_w
+    idx = idx.copy()
+    w = np.where(idx >= 0, w, 0.0).astype(np.float64)
+    k = idx.shape[1]
+    for a in range(k):
+        for b in range(a + 1, k):
+            same = (idx[:, a] == idx[:, b]) & (idx[:, a] >= 0)
+            w[same, a] += w[same, b]
+            w[same, b] = 0.0
+            idx[same, b] = -1
+    w = np.where(idx >= 0, w, 0.0)
+    order = np.argsort(-w, axis=1, kind="stable")[:, :4]
+    out_w = np.take_along_axis(w, order, axis=1)
+    out_i = np.take_along_axis(idx, order, axis=1)
+    if out_w.shape[1] < 4:
+        pad = 4 - out_w.shape[1]
+        out_w = np.pad(out_w, ((0, 0), (0, pad)))
+        out_i = np.pad(out_i, ((0, 0), (0, pad)), constant_values=-1)
+    out_i = np.where(out_w > 0, out_i, -1)
+    total = out_w.sum(axis=1, keepdims=True)
+    out_w = np.where(total > 0, out_w / np.maximum(total, 1e-12), 0.0)
+    return out_i.astype(np.int64), out_w
 
 
 def build_object(model: VrmModel, ref: Reference, opts: BuildOptions, log=print) -> BuildResult:
